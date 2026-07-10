@@ -203,6 +203,10 @@ def fetch_schedule(session: requests.Session, start: str, end: str) -> list:
         params={"start": start, "end": end, "codePersonne": CODE_PERSONNE},
     )
     r.raise_for_status()
+    # L'API renvoie 204 No Content (corps vide) quand il n'y a aucun cours
+    # sur la période demandée -> r.json() planterait sur ce corps vide.
+    if not r.text.strip():
+        return []
     return r.json()
 
 
