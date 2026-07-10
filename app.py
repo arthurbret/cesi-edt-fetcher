@@ -6,7 +6,7 @@ une simple requête HTTP (navigateur, curl, raccourci iOS/Android, bot
 Telegram...), une fois déployé sur ton VPS (Coolify ou autre).
 
 Endpoints :
-  GET /aujourdhui   -> texte lisible des cours du jour
+  GET /aujourdhui   -> JSON des cours du jour (+ champ "texte" lisible)
   GET /semaine       -> JSON brut de la semaine en cours (ou ?start=&end=)
   GET /healthz       -> ping simple, sans auth (pour Coolify health check)
 
@@ -25,7 +25,7 @@ import os
 import functools
 import datetime as dt
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify
 
 from cesi_edt_sync import HEADERS, default_week, fetch_schedule, login
 import requests
@@ -59,6 +59,19 @@ def format_heure(iso_dt: str) -> str:
     return iso_dt[11:16]
 
 
+# Noms français en dur : l'image Docker (debian slim) n'a pas la locale
+# fr_FR, donc strftime("%A %B") sortirait "Friday July".
+JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+MOIS_FR = [
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+]
+
+
+def format_date_fr(d: dt.date) -> str:
+    return f"{JOURS_FR[d.weekday()]} {d.day} {MOIS_FR[d.month - 1]} {d.year}"
+
+
 @app.route("/healthz")
 def healthz():
     return "ok", 200
@@ -90,22 +103,43 @@ def aujourdhui():
         return jsonify({"error": str(e)}), 502
 
     cours = sorted(cours, key=lambda c: c["start"])
-    date_str = dt.date.today().strftime("%A %d %B %Y")
+    date_str = format_date_fr(dt.date.today())
 
     lignes = [f"Cours du {date_str} :", ""]
+    cours_json = []
     if not cours:
         lignes.append("Aucun cours aujourd'hui.")
     else:
         for c in cours:
             debut = format_heure(c["start"])
             fin = format_heure(c["end"])
-            salles = ", ".join(s.get("nomSalle", "") for s in c.get("salles", []))
+            salles = [
+                s["nomSalle"] for s in c.get("salles", []) if s.get("nomSalle")
+            ]
             ligne = f"{debut} - {fin}  {c['title']}"
             if salles:
-                ligne += f"  [{salles}]"
+                ligne += f"  [{', '.join(salles)}]"
             lignes.append(ligne)
+            cours_json.append(
+                {
+                    "debut": debut,
+                    "fin": fin,
+                    "titre": c["title"],
+                    "salles": salles,
+                    "start": c["start"],
+                    "end": c["end"],
+                }
+            )
 
-    return Response("\n".join(lignes), mimetype="text/plain; charset=utf-8")
+    return jsonify(
+        {
+            "date": today,
+            "jour": date_str,
+            "cours": cours_json,
+            # version texte lisible (l'ancien format de cet endpoint)
+            "texte": "\n".join(lignes),
+        }
+    )
 
 
 if __name__ == "__main__":
