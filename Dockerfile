@@ -12,7 +12,16 @@ RUN apt-get update \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade certifi \
-    && pip install --no-cache-dir -r requirements.txt gunicorn
+    && pip install --no-cache-dir -r requirements.txt gunicorn \
+    # sts.viacesi.fr (ADFS) présente un certificat *.viacesi.fr dont la chaîne
+    # remonte à la racine "Sectigo Public Server Authentication Root R46".
+    # Cette racine est ABSENTE du magasin ca-certificates de Debian slim (selon
+    # la version livrée au build) -> échec "unable to get local issuer
+    # certificate". Le bundle certifi de Python, lui, la contient. On le fusionne
+    # dans le magasin système pour garantir la présence de la racine, quel que
+    # soit l'environnement de build.
+    && cat "$(python -c 'import certifi; print(certifi.where())')" \
+       >> /etc/ssl/certs/ca-certificates.crt
 
 COPY cesi_edt_sync.py cesi_cours_du_jour.py app.py ./
 

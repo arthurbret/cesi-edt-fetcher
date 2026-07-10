@@ -34,6 +34,51 @@ fichier :
 0 6 * * * /chemin/vers/venv/bin/python /chemin/vers/cesi_edt_sync.py >> /chemin/vers/edt.json 2>&1
 ```
 
+## Déploiement Docker / Coolify
+
+Déploie avec le `docker-compose.yaml` fourni (dans Coolify : type de build
+« Docker Compose »). Renseigne les variables `API_TOKEN`, `CESI_USERNAME`,
+`CESI_PASSWORD`, `CESI_CODE_PERSONNE` dans l'onglet Environment.
+
+### « Temporary failure in name resolution » sur `ent.cesi.fr`
+
+Symptôme, en appelant `/aujourdhui` ou `/semaine` depuis le conteneur :
+
+```json
+{ "error": "... Failed to resolve 'ent.cesi.fr' ([Errno -3] Temporary failure in name resolution)" }
+```
+
+Ce n'est **ni un bug du code ni du Dockerfile** : `[Errno -3]` (EAI_AGAIN)
+signifie « le serveur DNS configuré est injoignable » (à distinguer d'un
+`NXDOMAIN`, qui serait un nom introuvable). Sur un VPS Ubuntu + systemd-resolved
+(cas classique de Coolify), le conteneur hérite d'un `/etc/resolv.conf` pointant
+vers `127.0.0.53`, un résolveur qui n'écoute que sur l'hôte et reste injoignable
+depuis le conteneur.
+
+Le correctif est déjà en place dans `docker-compose.yaml` : on force des
+résolveurs publics joignables.
+
+```yaml
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+```
+
+Alternative si tu restes sur un déploiement « Dockerfile » sans compose : règle
+le DNS au niveau du démon Docker de ton VPS, `/etc/docker/daemon.json` :
+
+```json
+{ "dns": ["1.1.1.1", "8.8.8.8"] }
+```
+
+puis `sudo systemctl restart docker`.
+
+> Attention : ce correctif suppose que le conteneur tourne sur un réseau où les
+> DNS publics sont joignables (cas normal d'un VPS). Si tu exécutes le conteneur
+> **depuis le réseau interne CESI**, les DNS publics y sont bloqués et seuls les
+> résolveurs internes (`10.96.23.x`) résolvent `ent.cesi.fr` — dans ce cas, mets
+> ces adresses-là dans `dns:` à la place.
+
 ## Limites connues (à ne pas découvrir en prod)
 
 - **Pas de gestion MFA.** Le script fait un login "UserName + Password"

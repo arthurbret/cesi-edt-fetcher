@@ -1,0 +1,37 @@
+services:
+  cesi-edt:
+    build: .
+    restart: unless-stopped
+
+    # --- LE correctif du "Temporary failure in name resolution" ---
+    # Sur beaucoup de VPS (Coolify/Ubuntu + systemd-resolved), le conteneur
+    # hérite d'un /etc/resolv.conf pointant vers 127.0.0.53, un résolveur qui
+    # n'écoute QUE sur l'hôte et reste injoignable depuis le namespace réseau
+    # du conteneur. Résultat : requests n'arrive même pas à résoudre
+    # ent.cesi.fr et lève EAI_AGAIN ("Temporary failure in name resolution").
+    # On force donc des résolveurs publics réellement joignables.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+
+    ports:
+      - "8000:8000"
+
+    # Ces variables sont fournies par Coolify (onglet "Environment Variables")
+    # ou par un fichier .env à côté de ce compose en local.
+    environment:
+      - API_TOKEN=${API_TOKEN}
+      - CESI_USERNAME=${CESI_USERNAME}
+      - CESI_PASSWORD=${CESI_PASSWORD}
+      - CESI_CODE_PERSONNE=${CESI_CODE_PERSONNE}
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
