@@ -116,7 +116,14 @@ def aujourdhui():
             salles = [
                 s["nomSalle"] for s in c.get("salles", []) if s.get("nomSalle")
             ]
+            profs = [
+                f"{i.get('prenom', '')} {i.get('nom', '')}".strip()
+                for i in c.get("intervenants", []) or []
+                if i.get("nom") or i.get("prenom")
+            ]
             ligne = f"{debut} - {fin}  {c['title']}"
+            if profs:
+                ligne += f"  avec {', '.join(profs)}"
             if salles:
                 ligne += f"  [{', '.join(salles)}]"
             lignes.append(ligne)
@@ -125,6 +132,7 @@ def aujourdhui():
                     "debut": debut,
                     "fin": fin,
                     "titre": c["title"],
+                    "profs": profs,
                     "salles": salles,
                     "start": c["start"],
                     "end": c["end"],
