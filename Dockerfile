@@ -2,26 +2,24 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Certificats CA à jour : sans ça, les requêtes HTTPS vers sts.viacesi.fr
-# (et d'autres sites) échouent avec "unable to get local issuer certificate"
-# sur les images slim.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && update-ca-certificates
+    && rm -rf /var/lib/apt/lists/*
+
+# sts.viacesi.fr (ADFS, ferme derrière un load-balancer) sert parfois une
+# chaîne TLS INCOMPLÈTE : le certificat *.viacesi.fr arrive sans son
+# intermédiaire "Gandi RSA Organization Validation Secure Server CA 4".
+# Les navigateurs s'en sortent (cache/AIA fetching), mais OpenSSL/requests
+# échoue avec "unable to get local issuer certificate" — d'où l'erreur vue
+# sur le VPS alors que la même image fonctionne ailleurs. On embarque donc
+# l'intermédiaire ET sa racine Sectigo dans le magasin système : OpenSSL peut
+# alors reconstruire la chaîne même si le serveur n'envoie que la feuille.
+COPY certs/gandi-rsa-ov-secure-server-ca-4.pem /usr/local/share/ca-certificates/gandi-rsa-ov-secure-server-ca-4.crt
+COPY certs/sectigo-public-server-auth-root-r46.pem /usr/local/share/ca-certificates/sectigo-public-server-auth-root-r46.crt
+RUN update-ca-certificates
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade certifi \
-    && pip install --no-cache-dir -r requirements.txt gunicorn \
-    # sts.viacesi.fr (ADFS) présente un certificat *.viacesi.fr dont la chaîne
-    # remonte à la racine "Sectigo Public Server Authentication Root R46".
-    # Cette racine est ABSENTE du magasin ca-certificates de Debian slim (selon
-    # la version livrée au build) -> échec "unable to get local issuer
-    # certificate". Le bundle certifi de Python, lui, la contient. On le fusionne
-    # dans le magasin système pour garantir la présence de la racine, quel que
-    # soit l'environnement de build.
-    && cat "$(python -c 'import certifi; print(certifi.where())')" \
-       >> /etc/ssl/certs/ca-certificates.crt
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
 COPY cesi_edt_sync.py cesi_cours_du_jour.py app.py ./
 
